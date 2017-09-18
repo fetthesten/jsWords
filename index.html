@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+		<title>drillz</title>
+	
+		<script type="text/javascript" src="js/phaser.js"></script>
+		
+		<style type="text/css">
+			body
+			{
+				margin: .0em;
+				background-color: #333344;
+			}
+		</style>
+		
+	</head>
+	
+	<body>
+		<div id="gaem"></div>
+		<script type="text/javascript" >
+			// global vars
+			var cursors, scoreText, word, solution, letterSlots, letterTiles, letterSlotGroup, hintText, completeText;
+			
+			
+			var game = new Phaser.Game(1080, 720, Phaser.AUTO, '', 
+			{ 
+				preload: preload,
+				create: create,
+				update: update
+			});
+				
+			function preload()
+			{
+				game.scale.scaleMode = Phaser.ScaleManager.SHOW_ALL;
+				
+			
+				game.load.image('bg01', 'img/bg01.png');
+				game.load.image('button_empty', 'img/button_empty.png');
+				game.load.image('button_blank', 'img/button_blank.png');
+			}
+			
+			function create()
+			{
+				// bg
+				game.add.sprite(0, 0, 'bg01');
+				
+				// collision
+				game.physics.startSystem(Phaser.Physics.ARCADE);
+				letterSlotGroup = game.add.group();
+				letterSlotGroup.enableBody = true;
+				
+				// test
+				hintText = game.add.text(game.world.centerX, game.world.centerY - 128, 'forvente', { fontSize: '48px', fill: '#ea2' });
+				hintText.anchor.set(0.5);
+				hintText.stroke = '#000';
+				hintText.strokeThickness = 6;
+				
+				completeText = game.add.text(game.world.centerX, game.world.centerY - 64, '', { fontSize: '48px', fill: '#4f2' });
+				completeText.anchor.set(0.5);
+				completeText.stroke = '#000';
+				completeText.strokeThickness = 6;
+				
+				word = 'expect';
+				word = word.split('');
+				var letterOffset = game.scale.bounds.width / word.length;
+				
+				// add empty letter slots
+				letterSlots = [];
+				for (var i = 0; i < word.length; i++)
+				{
+					letterSlots.push(letterSlotGroup.create(letterOffset * i + 32, game.world.centerY, 'button_empty'));
+					var s = letterSlots[letterSlots.length - 1];
+					
+					s.anchor.set(0.5);
+					s.body.immovable = true;
+					
+					// game data properties
+					s.letter = word[i];
+					s.slotId = i + 1;
+					s.currentTile = 0;
+				}
+				
+				// shuffle the word
+				wordShuffle = shuffleArray(word);
+				
+				// add letter tiles for guessing
+				letterTiles = [];
+				for (var i = 0; i < word.length; i++)
+				{
+					letterTiles.push(game.add.sprite(letterOffset * i + 32, game.world.centerY + 56, 'button_blank'));
+					var t = letterTiles[letterTiles.length - 1];
+					
+					t.text = game.add.text(letterOffset * i + 32, game.world.centerY + 56, wordShuffle[i].toUpperCase(), { fontSize: '32px', fill: '#aaa' });
+					
+					game.physics.arcade.enable(t);
+					
+					t.text.anchor.set(0.5);
+					t.text.stroke = '#000';
+					t.text.strokeThickness = 4;
+					
+					t.anchor.set(0.5);
+					t.inputEnabled = true;
+					t.input.enableDrag();
+					
+					// game data properties
+					t.currentSlot = 0;
+					t.dragged = false;
+					t.originalPosition = t.position.clone();
+					t.tileId = i + 1;
+					t.currentSlot = 0;
+					t.letter = wordShuffle[i];
+				}
+				word = word.join('');
+			}
+			
+			function update()
+			{
+			
+				/*
+				
+				things to do
+				
+				- proper slot management for both arrays; tapped/dropped letters should snap to first available slot in either case
+				- tile states (to avoid re-snapping to slot during tween when tapped)
+				- proper ui
+				
+				*/
+				var newGuess = false;
+				
+				for(var i = 0; i < letterTiles.length; i++)
+				{
+					t = letterTiles[i];
+					
+					// overlapping a slot?
+					game.physics.arcade.overlap(t, letterSlotGroup, slotPlace, null, this);
+					
+					// snap if released
+					if (t.dragged && !t.input.isDragged)
+					{
+						t.dragged = false;
+						if (t.currentSlot !== 0)
+						{
+							game.add.tween(t).to({x: letterSlots[t.currentSlot - 1].position.x, y: letterSlots[t.currentSlot - 1].position.y}, 100, 'Linear', true, 0);
+							//t.position.set(letterSlots[t.currentSlot - 1].position.x, letterSlots[t.currentSlot - 1].position.y);
+							newGuess = true;
+						}
+						else
+						{
+							t.dragged = false;
+							game.add.tween(t).to({x: t.originalPosition.x, y: t.originalPosition.y}, 100, 'Linear', true, 0);
+							//t.position.set(t.originalPosition.x, t.originalPosition.y);
+						}
+					}
+					
+					// update dragged status
+					if (t.input.isDragged)
+					{
+						t.dragged = true;
+						if (t.currentSlot !== 0)
+							slotRemove(t, t.currentSlot);
+					}
+						
+					// update text pos
+					t.text.x = t.x;
+					t.text.y = t.y;
+				}
+				
+				if (newGuess)
+				{
+					var guess = [];
+					var completeGuess = true;
+					for (var i = 0; i < word.length; i++)
+					{
+						if (letterSlots[i].currentTile === 0)
+						{
+							guess.push('_');
+							completeGuess = false;
+						}
+						else
+							guess.push(letterTiles[letterSlots[i].currentTile - 1].letter);
+					}
+					if (completeGuess)
+					{
+						if (guess.join('') === word)
+						{
+							completeText.text = 'correct!';
+							completeText.fill = '#4f2';
+						}
+						else
+						{
+							completeText.text = 'incorrect!';
+							completeText.fill = '#f42';
+						}
+					}
+					else
+						completeText.text = '';
+				}
+				
+				function slotPlace(tile, slot)
+				{
+					tile.currentSlot = slot.slotId;
+					slot.currentTile = tile.tileId;
+				}
+			
+				function slotRemove(tile, slot)
+				{
+					tile.currentSlot = 0;
+					letterSlots[slot - 1].currentTile = 0;
+				}
+			}
+			
+			
+			
+			function shuffleArray(a)
+			{
+				var c = a.length, t, r;
+				while (0 !== c)
+				{
+					r = Math.floor(Math.random() * c);
+					c -= 1;
+					t = a[c];
+					a[c] = a[r];
+					a[r] = t;
+				}
+				return a;
+			}
+			
+		</script>
+	</body>
+</html>
